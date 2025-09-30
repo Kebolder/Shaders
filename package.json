@@ -1,7 +1,7 @@
 {
   "name": "com.kebolder.shaders",
   "displayName": "Kebolder - Shaders",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Some shaders for all my needs",
   "url": "https://github.com/Kebolder/Shaders",
   "type": "shader",

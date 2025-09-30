@@ -23,6 +23,22 @@ Shader "_Jax/Particles"
         [Toggle] _EmissionBaseColorAsMap ("Use Base Colors", Float) = 0
         [Toggle] _EmissionReplaceBase ("Override Base Color", Float) = 0
 
+        [Toggle] _UseAudioLink ("Use AudioLink", Float) = 0
+        _AudioLinkSmoothing ("Smoothing", Range(0,5)) = 0.0
+        [Toggle] _AudioLinkStrength ("Enable Strength Modulation", Float) = 1
+        [Enum(Bass,0,Low Mid,1,High Mid,2,Treble,3,Volume,4)] _AudioBandStrength ("Audio Band (Strength)", Int) = 0
+        _AudioMultMin ("Emission Min Strength", Range(0,50)) = 1.0
+        _AudioMultMax ("Emission Max Strength", Range(0,50)) = 5.0
+        [Toggle] _AudioLinkColorShift ("Enable Color Shifting", Float) = 0
+        [Enum(Bass,0,Low Mid,1,High Mid,2,Treble,3,Volume,4)] _AudioBandColor ("Audio Band (Color)", Int) = 0
+        _AudioLinkColorLow ("Color (Silent)", Color) = (1,0,0,1)
+        _AudioLinkColorMid ("Color (Mid)", Color) = (0,1,0,1)
+        _AudioLinkColorHigh ("Color (Peak)", Color) = (0,0,1,1)
+        [Toggle] _AudioLinkSize ("Enable Size Modulation", Float) = 0
+        [Enum(Bass,0,Low Mid,1,High Mid,2,Treble,3,Volume,4)] _AudioBandSize ("Audio Band (Size)", Int) = 0
+        _AudioSizeMin ("Min Size", Range(0,5)) = 1.0
+        _AudioSizeMax ("Max Size", Range(0,5)) = 1.0
+
         [Toggle] _UseDissolve ("Use Dissolve Effect", Float) = 0
         _DissolveTexture ("Dissolve Noise Texture", 2D) = "white" {}
         _DissolveAmount ("Dissolve Amount", Range(0,1)) = 0.0
@@ -39,16 +55,6 @@ Shader "_Jax/Particles"
         _DistortionScrollX ("Distortion Scroll X", Float) = 0.0
         _DistortionScrollY ("Distortion Scroll Y", Float) = 0.0
         _DistortionScale ("Distortion UV Scale", Float) = 1.0
-
-        [Toggle] _UseAudioLink ("Use AudioLink", Float) = 0
-        [Enum(Bass,0,Low Mid,1,High Mid,2,Treble,3,Volume,4)] _AudioBand ("Audio Band", Int) = 0
-        [Toggle] _AudioLinkStrength ("Enable Strength Modulation", Float) = 1
-        _AudioMultMin ("Emission Min Strength", Range(0,50)) = 1.0
-        _AudioMultMax ("Emission Max Strength", Range(0,50)) = 5.0
-        [Toggle] _AudioLinkColorShift ("Enable Color Shifting", Float) = 0
-        _AudioLinkColorLow ("Color (Silent)", Color) = (1,0,0,1)
-        _AudioLinkColorMid ("Color (Mid)", Color) = (0,1,0,1)
-        _AudioLinkColorHigh ("Color (Peak)", Color) = (0,0,1,1)
 
         _InvFade ("Soft Particles Factor", Range(0.01,3.0)) = 1.0
         [Toggle] _DualSided ("Dual Sided Rendering", Float) = 0
@@ -139,7 +145,10 @@ Shader "_Jax/Particles"
             float _DistortionScale;
 
             float _UseAudioLink;
-            int _AudioBand;
+            float _AudioLinkSmoothing;
+            int _AudioBandStrength;
+            int _AudioBandColor;
+            int _AudioBandSize;
             float _AudioLinkStrength;
             float _AudioMultMin;
             float _AudioMultMax;
@@ -147,31 +156,61 @@ Shader "_Jax/Particles"
             half4 _AudioLinkColorLow;
             half4 _AudioLinkColorMid;
             half4 _AudioLinkColorHigh;
+            float _AudioLinkSize;
+            float _AudioSizeMin;
+            float _AudioSizeMax;
 
             int _RenderingMode;
             int _ColorMode;
 
             #if defined(AUDIOLINK)
-            float GetAudioReactiveValue()
+            float GetAudioReactiveValue(int band)
             {
                 if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
                     return 0.0;
 
                 float audioValue = 0.0;
 
-                if (_AudioBand == 0)
-                    audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
-                else if (_AudioBand == 1)
-                    audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
-                else if (_AudioBand == 2)
-                    audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
-                else if (_AudioBand == 3)
-                    audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
-                else if (_AudioBand == 4)
-                    audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
-                                 AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
-                                 AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
-                                 AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
+                // Get audio value - use progressively smoother channels as smoothing increases
+                if (_AudioLinkSmoothing < 0.01)
+                {
+                    // No smoothing - use raw value (.r)
+                    if (band == 0)
+                        audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
+                    else if (band == 1)
+                        audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
+                    else if (band == 2)
+                        audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
+                    else if (band == 3)
+                        audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
+                    else if (band == 4)
+                        audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
+                                     AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
+                                     AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
+                                     AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
+                }
+                else
+                {
+                    // Use smoothed value (.g) and apply additional smoothing via pow function
+                    if (band == 0)
+                        audioValue = AudioLinkData(ALPASS_AUDIOBASS).g;
+                    else if (band == 1)
+                        audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).g;
+                    else if (band == 2)
+                        audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).g;
+                    else if (band == 3)
+                        audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).g;
+                    else if (band == 4)
+                        audioValue = (AudioLinkData(ALPASS_AUDIOBASS).g +
+                                     AudioLinkData(ALPASS_AUDIOLOWMIDS).g +
+                                     AudioLinkData(ALPASS_AUDIOHIGHMIDS).g +
+                                     AudioLinkData(ALPASS_AUDIOTREBLE).g) * 0.25;
+
+                    // Apply exponential smoothing curve - higher values create more damping
+                    // This makes the value approach changes more slowly
+                    float smoothPower = 1.0 + (_AudioLinkSmoothing * 0.4); // Map 0-5 to 1.0-3.0
+                    audioValue = pow(audioValue, smoothPower);
+                }
 
                 return audioValue;
             }
@@ -184,6 +223,16 @@ Shader "_Jax/Particles"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
                 float4 vertex = v.vertex;
+
+                // Apply AudioLink size modulation
+                #if defined(AUDIOLINK)
+                if (_UseAudioLink > 0.5 && _AudioLinkSize > 0.5 && AudioLinkIsAvailable())
+                {
+                    float audioValue = GetAudioReactiveValue(_AudioBandSize);
+                    float sizeMultiplier = lerp(_AudioSizeMin, _AudioSizeMax, audioValue);
+                    vertex.xyz *= sizeMultiplier;
+                }
+                #endif
 
                 o.vertex = UnityObjectToClipPos(vertex);
                 o.texcoord = v.texcoord;
@@ -232,7 +281,7 @@ Shader "_Jax/Particles"
                     if (_UseAudioLink > 0.5 && _AudioLinkStrength > 0.5 && AudioLinkIsAvailable())
                     {
                         // Override emission strength with AudioLink value
-                        float audioValue = GetAudioReactiveValue();
+                        float audioValue = GetAudioReactiveValue(_AudioBandStrength);
                         emissionStrength = lerp(_AudioMultMin, _AudioMultMax, audioValue);
                     }
                     #endif
@@ -243,7 +292,7 @@ Shader "_Jax/Particles"
                     // Apply color shifting if enabled
                     if (_UseAudioLink > 0.5 && _AudioLinkColorShift > 0.5 && AudioLinkIsAvailable())
                     {
-                        float audioValue = GetAudioReactiveValue();
+                        float audioValue = GetAudioReactiveValue(_AudioBandColor);
                         half3 gradientColor;
                         if (audioValue < 0.5)
                         {
@@ -395,7 +444,10 @@ Shader "_Jax/Particles"
             float _DistortionScale;
 
             float _UseAudioLink;
-            int _AudioBand;
+            float _AudioLinkSmoothing;
+            int _AudioBandStrength;
+            int _AudioBandColor;
+            int _AudioBandSize;
             float _AudioLinkStrength;
             float _AudioMultMin;
             float _AudioMultMax;
@@ -403,31 +455,61 @@ Shader "_Jax/Particles"
             half4 _AudioLinkColorLow;
             half4 _AudioLinkColorMid;
             half4 _AudioLinkColorHigh;
+            float _AudioLinkSize;
+            float _AudioSizeMin;
+            float _AudioSizeMax;
 
             int _RenderingMode;
             int _ColorMode;
 
             #if defined(AUDIOLINK)
-            float GetAudioReactiveValue()
+            float GetAudioReactiveValue(int band)
             {
                 if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
                     return 0.0;
 
                 float audioValue = 0.0;
 
-                if (_AudioBand == 0)
-                    audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
-                else if (_AudioBand == 1)
-                    audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
-                else if (_AudioBand == 2)
-                    audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
-                else if (_AudioBand == 3)
-                    audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
-                else if (_AudioBand == 4)
-                    audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
-                                 AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
-                                 AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
-                                 AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
+                // Get audio value - use progressively smoother channels as smoothing increases
+                if (_AudioLinkSmoothing < 0.01)
+                {
+                    // No smoothing - use raw value (.r)
+                    if (band == 0)
+                        audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
+                    else if (band == 1)
+                        audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
+                    else if (band == 2)
+                        audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
+                    else if (band == 3)
+                        audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
+                    else if (band == 4)
+                        audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
+                                     AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
+                                     AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
+                                     AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
+                }
+                else
+                {
+                    // Use smoothed value (.g) and apply additional smoothing via pow function
+                    if (band == 0)
+                        audioValue = AudioLinkData(ALPASS_AUDIOBASS).g;
+                    else if (band == 1)
+                        audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).g;
+                    else if (band == 2)
+                        audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).g;
+                    else if (band == 3)
+                        audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).g;
+                    else if (band == 4)
+                        audioValue = (AudioLinkData(ALPASS_AUDIOBASS).g +
+                                     AudioLinkData(ALPASS_AUDIOLOWMIDS).g +
+                                     AudioLinkData(ALPASS_AUDIOHIGHMIDS).g +
+                                     AudioLinkData(ALPASS_AUDIOTREBLE).g) * 0.25;
+
+                    // Apply exponential smoothing curve - higher values create more damping
+                    // This makes the value approach changes more slowly
+                    float smoothPower = 1.0 + (_AudioLinkSmoothing * 0.4); // Map 0-5 to 1.0-3.0
+                    audioValue = pow(audioValue, smoothPower);
+                }
 
                 return audioValue;
             }
@@ -439,7 +521,7 @@ Shader "_Jax/Particles"
                     if (_AudioLinkStrength < 0.5 || _UseAudioLink < 0.5 || !AudioLinkIsAvailable())
                         return 1.0;
 
-                    float audioValue = GetAudioReactiveValue();
+                    float audioValue = GetAudioReactiveValue(_AudioBandStrength);
                     return lerp(_AudioMultMin, _AudioMultMax, audioValue);
                 #else
                     return 1.0;
@@ -453,6 +535,16 @@ Shader "_Jax/Particles"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
                 float4 vertex = v.vertex;
+
+                // Apply AudioLink size modulation
+                #if defined(AUDIOLINK)
+                if (_UseAudioLink > 0.5 && _AudioLinkSize > 0.5 && AudioLinkIsAvailable())
+                {
+                    float audioValue = GetAudioReactiveValue(_AudioBandSize);
+                    float sizeMultiplier = lerp(_AudioSizeMin, _AudioSizeMax, audioValue);
+                    vertex.xyz *= sizeMultiplier;
+                }
+                #endif
 
                 o.vertex = UnityObjectToClipPos(vertex);
                 o.texcoord = v.texcoord;
@@ -504,7 +596,7 @@ Shader "_Jax/Particles"
                     if (_UseAudioLink > 0.5 && _AudioLinkStrength > 0.5 && AudioLinkIsAvailable())
                     {
                         // Override emission strength with AudioLink value
-                        float audioValue = GetAudioReactiveValue();
+                        float audioValue = GetAudioReactiveValue(_AudioBandStrength);
                         emissionStrength = lerp(_AudioMultMin, _AudioMultMax, audioValue);
                     }
                     #endif
@@ -515,7 +607,7 @@ Shader "_Jax/Particles"
                     // Apply color shifting if enabled
                     if (_UseAudioLink > 0.5 && _AudioLinkColorShift > 0.5 && AudioLinkIsAvailable())
                     {
-                        float audioValue = GetAudioReactiveValue();
+                        float audioValue = GetAudioReactiveValue(_AudioBandColor);
                         half3 gradientColor;
                         if (audioValue < 0.5)
                         {

@@ -170,7 +170,10 @@ public class ParticlesShaderGUI : ShaderGUI
         // Handle AudioLink keyword
         EditorGUI.BeginChangeCheck();
         audioLinkFoldout = DrawToggleFoldoutSection("AudioLink (VRChat)", audioLinkFoldout, useAudioLink, () => {
-            MaterialProperty audioBand = FindProperty("_AudioBand", properties);
+            MaterialProperty audioLinkSmoothing = FindProperty("_AudioLinkSmoothing", properties);
+            MaterialProperty audioBandStrength = FindProperty("_AudioBandStrength", properties);
+            MaterialProperty audioBandColor = FindProperty("_AudioBandColor", properties);
+            MaterialProperty audioBandSize = FindProperty("_AudioBandSize", properties);
             MaterialProperty audioLinkStrength = FindProperty("_AudioLinkStrength", properties);
             MaterialProperty audioMultMin = FindProperty("_AudioMultMin", properties);
             MaterialProperty audioMultMax = FindProperty("_AudioMultMax", properties);
@@ -178,9 +181,13 @@ public class ParticlesShaderGUI : ShaderGUI
             MaterialProperty audioLinkColorLow = FindProperty("_AudioLinkColorLow", properties);
             MaterialProperty audioLinkColorMid = FindProperty("_AudioLinkColorMid", properties);
             MaterialProperty audioLinkColorHigh = FindProperty("_AudioLinkColorHigh", properties);
+            MaterialProperty audioLinkSize = FindProperty("_AudioLinkSize", properties);
+            MaterialProperty audioSizeMin = FindProperty("_AudioSizeMin", properties);
+            MaterialProperty audioSizeMax = FindProperty("_AudioSizeMax", properties);
 
-            EditorGUILayout.LabelField("Audio Reactivity", EditorStyles.boldLabel);
-            DrawAudioBandDropdown(materialEditor, audioBand);
+            EditorGUILayout.LabelField("Global Settings", EditorStyles.boldLabel);
+            materialEditor.ShaderProperty(audioLinkSmoothing, new GUIContent("Smoothing", "Uses AudioLink's pre-smoothed data and applies exponential damping. 0=instant response (raw), >0=uses smoothed values with curve damping."));
+            EditorGUILayout.HelpBox("Smoothing applies to all AudioLink features. Note: This uses AudioLink's built-in smoothed data, so the effect may be subtle. For dramatic smoothing, adjust AudioLink's global settings.", MessageType.Info);
 
             DrawDivider();
 
@@ -188,6 +195,7 @@ public class ParticlesShaderGUI : ShaderGUI
             materialEditor.ShaderProperty(audioLinkStrength, new GUIContent("Enable Strength Modulation", "Toggle audio-reactive emission strength on/off."));
 
             EditorGUI.BeginDisabledGroup(audioLinkStrength.floatValue < 0.5f);
+            DrawAudioBandDropdown(materialEditor, audioBandStrength, "Audio Band (Strength)");
             EditorGUILayout.HelpBox("AudioLink overrides your Emission Strength with these values based on the selected audio band's intensity.", MessageType.Info);
             materialEditor.ShaderProperty(audioMultMin, new GUIContent("Min Strength", "Emission strength at low/silent audio. Example: Min=1 means emission strength of 1 when silent."));
             materialEditor.ShaderProperty(audioMultMax, new GUIContent("Max Strength", "Emission strength at peak audio. Example: Max=10 means emission strength of 10 at full volume."));
@@ -199,14 +207,27 @@ public class ParticlesShaderGUI : ShaderGUI
             materialEditor.ShaderProperty(audioLinkColorShift, new GUIContent("Enable Color Shifting", "Toggle audio-reactive color gradient shifting on/off."));
 
             EditorGUI.BeginDisabledGroup(audioLinkColorShift.floatValue < 0.5f);
+            DrawAudioBandDropdown(materialEditor, audioBandColor, "Audio Band (Color)");
             EditorGUILayout.HelpBox("Audio band intensity blends between three colors to create a smooth gradient effect.", MessageType.Info);
             materialEditor.ShaderProperty(audioLinkColorLow, new GUIContent("Silent Color", "Color displayed when audio is silent or at minimum intensity."));
             materialEditor.ShaderProperty(audioLinkColorMid, new GUIContent("Mid Color", "Color displayed at medium audio intensity (50%)."));
             materialEditor.ShaderProperty(audioLinkColorHigh, new GUIContent("Peak Color", "Color displayed at peak audio intensity (100%)."));
             EditorGUI.EndDisabledGroup();
 
+            DrawDivider();
+
+            EditorGUILayout.LabelField("Size Modulation", EditorStyles.boldLabel);
+            materialEditor.ShaderProperty(audioLinkSize, new GUIContent("Enable Size Modulation", "Toggle audio-reactive particle size scaling on/off."));
+
+            EditorGUI.BeginDisabledGroup(audioLinkSize.floatValue < 0.5f);
+            DrawAudioBandDropdown(materialEditor, audioBandSize, "Audio Band (Size)");
+            EditorGUILayout.HelpBox("AudioLink scales particle size based on the selected audio band's intensity.", MessageType.Info);
+            materialEditor.ShaderProperty(audioSizeMin, new GUIContent("Min Size", "Size multiplier at low/silent audio. Example: Min=0.5 means particles are half size when silent."));
+            materialEditor.ShaderProperty(audioSizeMax, new GUIContent("Max Size", "Size multiplier at peak audio. Example: Max=2.0 means particles are double size at full volume."));
+            EditorGUI.EndDisabledGroup();
+
             EditorGUILayout.Space();
-            EditorGUILayout.HelpBox("💡 AudioLink features require Emission to be enabled! Enable AudioLink, choose which features to use (strength and/or color), and configure the audio band.", MessageType.None);
+            EditorGUILayout.HelpBox("💡 AudioLink features work independently! Emission features require Emission to be enabled. Size modulation works on all particles.", MessageType.None);
         });
 
         if (EditorGUI.EndChangeCheck())
@@ -572,25 +593,26 @@ public class ParticlesShaderGUI : ShaderGUI
         }
     }
 
-    private void DrawAudioBandDropdown(MaterialEditor materialEditor, MaterialProperty audioBand)
+    private void DrawAudioBandDropdown(MaterialEditor materialEditor, MaterialProperty audioBand, string label = "Audio Band")
     {
-        var bandNames = new string[] { "Bass", "Low Mid", "High Mid", "Treble" };
+        var bandNames = new string[] { "Bass", "Low Mid", "High Mid", "Treble", "Volume" };
         var bandTooltips = new string[] {
-            "Bass frequencies (0-4) - Deep, thumping sounds",
-            "Low-Mid frequencies (4-8) - Vocals and mid-range instruments",
-            "High-Mid frequencies (8-12) - Bright instruments and harmonics",
-            "Treble frequencies (12-16) - High-pitched sounds and cymbals"
+            "Bass frequencies - Deep, thumping sounds",
+            "Low-Mid frequencies - Vocals and mid-range instruments",
+            "High-Mid frequencies - Bright instruments and harmonics",
+            "Treble frequencies - High-pitched sounds and cymbals",
+            "Volume (All Bands) - Average of all frequency bands"
         };
 
         EditorGUI.BeginChangeCheck();
 
-        var currentBand = Mathf.RoundToInt(audioBand.floatValue / 4f);
-        var newBand = EditorGUILayout.Popup(new GUIContent("Audio Band", "Which frequency range to react to"),
+        var currentBand = (int)audioBand.floatValue;
+        var newBand = EditorGUILayout.Popup(new GUIContent(label, "Which frequency range to react to"),
                                            currentBand, bandNames);
 
         if (EditorGUI.EndChangeCheck())
         {
-            audioBand.floatValue = newBand * 4;
+            audioBand.floatValue = newBand;
         }
 
         if (currentBand >= 0 && currentBand < bandTooltips.Length)
