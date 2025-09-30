@@ -7,7 +7,7 @@ on:
     paths: package.json
 
 env:
-  triggerRepoUpdate: ${{ false }}
+  triggerRepoUpdate: ${{ true }}
 
 permissions:
   contents: write
@@ -95,4 +95,6 @@ jobs:
         if: ${{ env.triggerRepoUpdate == 'true' }}
         uses: peter-evans/repository-dispatch@v2
         with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository: Kebolder/Kebolder-VPM-Listing
           event-type: trigger-repo-update
