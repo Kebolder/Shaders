@@ -7,7 +7,6 @@ on:
     paths: package.json
 
 env:
-  icon_path: .github/thumbnail.png
   triggerRepoUpdate: ${{ false }}
 
 permissions:

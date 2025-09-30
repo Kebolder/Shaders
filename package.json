@@ -1,22 +1,16 @@
 {
-  "name": "dev.sleightly.template",
-  "displayName": "JS-Template",
-  "version": "0.0.0",
-  "description": "A VPM Package Template",
-  "url": "https://github.com/JustSleightly/JS-Template",
-  "vpmDependencies": {
-    "com.vrchat.avatars": "^3.8.0"
-  },
-  "type": "tool",
+  "name": "com.kebolder.shaders",
+  "displayName": "Kebolder - Shaders",
+  "version": "1.0.0",
+  "description": "Some shaders for all my needs",
+  "url": "https://github.com/Kebolder/Shaders",
+  "type": "shader",
   "keywords": [
-    "JustSleightly",
-    "Sleightly",
+    "Effect",
     "VRChat",
-    "Template"
+    "Shader"
   ],
   "author": {
-    "name": "JustSleightly",
-    "email": "just@sleightly.dev",
-    "url": "https://just.sleightly.dev"
+    "name": "Kebolder",
   }
 }
