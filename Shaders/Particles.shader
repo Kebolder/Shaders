@@ -42,8 +42,13 @@ Shader "_Jax/Particles"
 
         [Toggle] _UseAudioLink ("Use AudioLink", Float) = 0
         [Enum(Bass,0,Low Mid,1,High Mid,2,Treble,3,Volume,4)] _AudioBand ("Audio Band", Int) = 0
+        [Toggle] _AudioLinkStrength ("Enable Strength Modulation", Float) = 1
         _AudioMultMin ("Emission Min Strength", Range(0,50)) = 1.0
         _AudioMultMax ("Emission Max Strength", Range(0,50)) = 5.0
+        [Toggle] _AudioLinkColorShift ("Enable Color Shifting", Float) = 0
+        _AudioLinkColorLow ("Color (Silent)", Color) = (1,0,0,1)
+        _AudioLinkColorMid ("Color (Mid)", Color) = (0,1,0,1)
+        _AudioLinkColorHigh ("Color (Peak)", Color) = (0,0,1,1)
 
         _InvFade ("Soft Particles Factor", Range(0.01,3.0)) = 1.0
         [Toggle] _DualSided ("Dual Sided Rendering", Float) = 0
@@ -67,13 +72,14 @@ Shader "_Jax/Particles"
             #pragma multi_compile_fog
             #pragma multi_compile_particles
             #pragma multi_compile_instancing
+            #pragma shader_feature AUDIOLINK
             #include "UnityCG.cginc"
 
             #if defined(AUDIOLINK)
                 #include "Packages/com.llealloo.audiolink/Runtime/Shaders/AudioLink.cginc"
             #endif
 
-            sampler2D_float _CameraDepthTexture;
+            UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
             float4 _CameraDepthTexture_ST;
 
             struct appdata_t {
@@ -114,7 +120,7 @@ Shader "_Jax/Particles"
             float _Alpha;
 
             float _UseDissolve;
-            sampler2D _DissolveTexture;
+            UNITY_DECLARE_TEX2D(_DissolveTexture);
             float4 _DissolveTexture_ST;
             float _DissolveAmount;
             float _DissolveEdgeWidth;
@@ -134,40 +140,42 @@ Shader "_Jax/Particles"
 
             float _UseAudioLink;
             int _AudioBand;
+            float _AudioLinkStrength;
             float _AudioMultMin;
             float _AudioMultMax;
+            float _AudioLinkColorShift;
+            half4 _AudioLinkColorLow;
+            half4 _AudioLinkColorMid;
+            half4 _AudioLinkColorHigh;
 
             int _RenderingMode;
             int _ColorMode;
 
-            float GetAudioReactiveMultiplier()
+            #if defined(AUDIOLINK)
+            float GetAudioReactiveValue()
             {
-                #if defined(AUDIOLINK)
-                    if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
-                        return 1.0;
+                if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
+                    return 0.0;
 
-                    float audioValue = 0.0;
+                float audioValue = 0.0;
 
-                    if (_AudioBand == 0)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(0, 0)).r;
-                    else if (_AudioBand == 1)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(4, 0)).r;
-                    else if (_AudioBand == 2)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(8, 0)).r;
-                    else if (_AudioBand == 3)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(12, 0)).r;
-                    else if (_AudioBand == 4)
-                        audioValue = (AudioLinkData(ALPASS_AUDIOLINK + uint2(0, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(4, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(8, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(12, 0)).r) * 0.25;
+                if (_AudioBand == 0)
+                    audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
+                else if (_AudioBand == 1)
+                    audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
+                else if (_AudioBand == 2)
+                    audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
+                else if (_AudioBand == 3)
+                    audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
+                else if (_AudioBand == 4)
+                    audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
+                                 AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
+                                 AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
+                                 AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
 
-                    return lerp(_AudioMultMin, _AudioMultMax, audioValue);
-                #else
-                    return 1.0;
-                #endif
+                return audioValue;
             }
-
+            #endif
 
             v2f vert (appdata_t v)
             {
@@ -194,7 +202,7 @@ Shader "_Jax/Particles"
 
             half4 frag (v2f i) : SV_Target
             {
-                float audioMultiplier = GetAudioReactiveMultiplier();
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
                 // Distortion
                 float2 mainUV = i.texcoord;
@@ -217,12 +225,37 @@ Shader "_Jax/Particles"
                     half4 emissionMask = tex2D(_EmissionMask, mainUV);
                     half3 emissionMapContrib = lerp(half3(1,1,1), emissionMap.rgb, step(0.01, dot(emissionMap.rgb, half3(1,1,1))));
                     half3 baseColorTint = lerp(half3(1,1,1), col.rgb, _EmissionBaseColorAsMap);
-                    emission = emissionMapContrib * emissionMask.rgb * baseColorTint * _EmissionColor.rgb * _EmissionStrength;
 
-                    if (_UseAudioLink > 0.5)
+                    // Determine emission strength
+                    float emissionStrength = _EmissionStrength;
+                    #if defined(AUDIOLINK)
+                    if (_UseAudioLink > 0.5 && _AudioLinkStrength > 0.5 && AudioLinkIsAvailable())
                     {
-                        emission *= audioMultiplier;
+                        // Override emission strength with AudioLink value
+                        float audioValue = GetAudioReactiveValue();
+                        emissionStrength = lerp(_AudioMultMin, _AudioMultMax, audioValue);
                     }
+                    #endif
+
+                    emission = emissionMapContrib * emissionMask.rgb * baseColorTint * _EmissionColor.rgb * emissionStrength;
+
+                    #if defined(AUDIOLINK)
+                    // Apply color shifting if enabled
+                    if (_UseAudioLink > 0.5 && _AudioLinkColorShift > 0.5 && AudioLinkIsAvailable())
+                    {
+                        float audioValue = GetAudioReactiveValue();
+                        half3 gradientColor;
+                        if (audioValue < 0.5)
+                        {
+                            gradientColor = lerp(_AudioLinkColorLow.rgb, _AudioLinkColorMid.rgb, audioValue * 2.0);
+                        }
+                        else
+                        {
+                            gradientColor = lerp(_AudioLinkColorMid.rgb, _AudioLinkColorHigh.rgb, (audioValue - 0.5) * 2.0);
+                        }
+                        emission = gradientColor * emissionStrength;
+                    }
+                    #endif
                     emission = max(emission, 0.0);
                 }
                 if (_EmissionReplaceBase > 0.5)
@@ -249,7 +282,7 @@ Shader "_Jax/Particles"
                 if (_UseDissolve > 0.5)
                 {
                     float2 dissolveUV = i.texcoord * _DissolveScale;
-                    float noise = tex2D(_DissolveTexture, dissolveUV).r;
+                    float noise = UNITY_SAMPLE_TEX2D(_DissolveTexture, dissolveUV).r;
                     float dissolveEdge = _DissolveAmount + _DissolveEdgeWidth;
 
                     if (noise < _DissolveAmount)
@@ -294,6 +327,7 @@ Shader "_Jax/Particles"
             #pragma multi_compile_particles
             #pragma multi_compile_instancing
             #pragma shader_feature _DUALSIDED_ON
+            #pragma shader_feature AUDIOLINK
             #include "UnityCG.cginc"
 
             // AudioLink support
@@ -301,7 +335,7 @@ Shader "_Jax/Particles"
                 #include "Packages/com.llealloo.audiolink/Runtime/Shaders/AudioLink.cginc"
             #endif
 
-            sampler2D_float _CameraDepthTexture;
+            UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
             float4 _CameraDepthTexture_ST;
 
             struct appdata_t {
@@ -342,7 +376,7 @@ Shader "_Jax/Particles"
             float _Alpha;
 
             float _UseDissolve;
-            sampler2D _DissolveTexture;
+            UNITY_DECLARE_TEX2D(_DissolveTexture);
             float4 _DissolveTexture_ST;
             float _DissolveAmount;
             float _DissolveEdgeWidth;
@@ -362,34 +396,50 @@ Shader "_Jax/Particles"
 
             float _UseAudioLink;
             int _AudioBand;
+            float _AudioLinkStrength;
             float _AudioMultMin;
             float _AudioMultMax;
+            float _AudioLinkColorShift;
+            half4 _AudioLinkColorLow;
+            half4 _AudioLinkColorMid;
+            half4 _AudioLinkColorHigh;
 
             int _RenderingMode;
             int _ColorMode;
 
+            #if defined(AUDIOLINK)
+            float GetAudioReactiveValue()
+            {
+                if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
+                    return 0.0;
+
+                float audioValue = 0.0;
+
+                if (_AudioBand == 0)
+                    audioValue = AudioLinkData(ALPASS_AUDIOBASS).r;
+                else if (_AudioBand == 1)
+                    audioValue = AudioLinkData(ALPASS_AUDIOLOWMIDS).r;
+                else if (_AudioBand == 2)
+                    audioValue = AudioLinkData(ALPASS_AUDIOHIGHMIDS).r;
+                else if (_AudioBand == 3)
+                    audioValue = AudioLinkData(ALPASS_AUDIOTREBLE).r;
+                else if (_AudioBand == 4)
+                    audioValue = (AudioLinkData(ALPASS_AUDIOBASS).r +
+                                 AudioLinkData(ALPASS_AUDIOLOWMIDS).r +
+                                 AudioLinkData(ALPASS_AUDIOHIGHMIDS).r +
+                                 AudioLinkData(ALPASS_AUDIOTREBLE).r) * 0.25;
+
+                return audioValue;
+            }
+            #endif
+
             float GetAudioReactiveMultiplier()
             {
                 #if defined(AUDIOLINK)
-                    if (_UseAudioLink < 0.5 || !AudioLinkIsAvailable())
+                    if (_AudioLinkStrength < 0.5 || _UseAudioLink < 0.5 || !AudioLinkIsAvailable())
                         return 1.0;
 
-                    float audioValue = 0.0;
-
-                    if (_AudioBand == 0)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(0, 0)).r;
-                    else if (_AudioBand == 1)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(4, 0)).r;
-                    else if (_AudioBand == 2)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(8, 0)).r;
-                    else if (_AudioBand == 3)
-                        audioValue = AudioLinkData(ALPASS_AUDIOLINK + uint2(12, 0)).r;
-                    else if (_AudioBand == 4)
-                        audioValue = (AudioLinkData(ALPASS_AUDIOLINK + uint2(0, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(4, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(8, 0)).r +
-                                     AudioLinkData(ALPASS_AUDIOLINK + uint2(12, 0)).r) * 0.25;
-
+                    float audioValue = GetAudioReactiveValue();
                     return lerp(_AudioMultMin, _AudioMultMax, audioValue);
                 #else
                     return 1.0;
@@ -421,6 +471,8 @@ Shader "_Jax/Particles"
 
             half4 frag (v2f i) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
                 float audioMultiplier = GetAudioReactiveMultiplier();
 
                 float2 mainUV = i.texcoord;
@@ -446,12 +498,36 @@ Shader "_Jax/Particles"
                     half3 emissionMapContrib = lerp(half3(1,1,1), emissionMap.rgb, step(0.01, dot(emissionMap.rgb, half3(1,1,1))));
                     half3 baseColorTint = lerp(half3(1,1,1), col.rgb, _EmissionBaseColorAsMap);
 
-                    emission = emissionMapContrib * emissionMask.rgb * baseColorTint * _EmissionColor.rgb * _EmissionStrength;
-
-                    if (_UseAudioLink > 0.5)
+                    // Determine emission strength
+                    float emissionStrength = _EmissionStrength;
+                    #if defined(AUDIOLINK)
+                    if (_UseAudioLink > 0.5 && _AudioLinkStrength > 0.5 && AudioLinkIsAvailable())
                     {
-                        emission *= audioMultiplier;
+                        // Override emission strength with AudioLink value
+                        float audioValue = GetAudioReactiveValue();
+                        emissionStrength = lerp(_AudioMultMin, _AudioMultMax, audioValue);
                     }
+                    #endif
+
+                    emission = emissionMapContrib * emissionMask.rgb * baseColorTint * _EmissionColor.rgb * emissionStrength;
+
+                    #if defined(AUDIOLINK)
+                    // Apply color shifting if enabled
+                    if (_UseAudioLink > 0.5 && _AudioLinkColorShift > 0.5 && AudioLinkIsAvailable())
+                    {
+                        float audioValue = GetAudioReactiveValue();
+                        half3 gradientColor;
+                        if (audioValue < 0.5)
+                        {
+                            gradientColor = lerp(_AudioLinkColorLow.rgb, _AudioLinkColorMid.rgb, audioValue * 2.0);
+                        }
+                        else
+                        {
+                            gradientColor = lerp(_AudioLinkColorMid.rgb, _AudioLinkColorHigh.rgb, (audioValue - 0.5) * 2.0);
+                        }
+                        emission = gradientColor * emissionStrength;
+                    }
+                    #endif
 
                     emission = max(emission, 0.0);
                 }
@@ -478,7 +554,7 @@ Shader "_Jax/Particles"
                 if (_UseDissolve > 0.5)
                 {
                     float2 dissolveUV = i.texcoord * _DissolveScale;
-                    float noise = tex2D(_DissolveTexture, dissolveUV).r;
+                    float noise = UNITY_SAMPLE_TEX2D(_DissolveTexture, dissolveUV).r;
 
                     float dissolveEdge = _DissolveAmount + _DissolveEdgeWidth;
 

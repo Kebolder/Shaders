@@ -167,10 +167,17 @@ public class ParticlesShaderGUI : ShaderGUI
 
         MaterialProperty useAudioLink = FindProperty("_UseAudioLink", properties);
 
+        // Handle AudioLink keyword
+        EditorGUI.BeginChangeCheck();
         audioLinkFoldout = DrawToggleFoldoutSection("AudioLink (VRChat)", audioLinkFoldout, useAudioLink, () => {
             MaterialProperty audioBand = FindProperty("_AudioBand", properties);
+            MaterialProperty audioLinkStrength = FindProperty("_AudioLinkStrength", properties);
             MaterialProperty audioMultMin = FindProperty("_AudioMultMin", properties);
             MaterialProperty audioMultMax = FindProperty("_AudioMultMax", properties);
+            MaterialProperty audioLinkColorShift = FindProperty("_AudioLinkColorShift", properties);
+            MaterialProperty audioLinkColorLow = FindProperty("_AudioLinkColorLow", properties);
+            MaterialProperty audioLinkColorMid = FindProperty("_AudioLinkColorMid", properties);
+            MaterialProperty audioLinkColorHigh = FindProperty("_AudioLinkColorHigh", properties);
 
             EditorGUILayout.LabelField("Audio Reactivity", EditorStyles.boldLabel);
             DrawAudioBandDropdown(materialEditor, audioBand);
@@ -178,14 +185,38 @@ public class ParticlesShaderGUI : ShaderGUI
             DrawDivider();
 
             EditorGUILayout.LabelField("Emission Intensity Modulation", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox("AudioLink multiplies your base Emission Strength by these values based on the selected audio band's intensity.", MessageType.Info);
+            materialEditor.ShaderProperty(audioLinkStrength, new GUIContent("Enable Strength Modulation", "Toggle audio-reactive emission strength on/off."));
 
-            materialEditor.ShaderProperty(audioMultMin, new GUIContent("Min Multiplier", "Multiplier at low/silent audio. Final emission = Base Strength × Min. Example: Strength=1, Min=1 → emission=1"));
-            materialEditor.ShaderProperty(audioMultMax, new GUIContent("Max Multiplier", "Multiplier at peak audio. Final emission = Base Strength × Max. Example: Strength=1, Max=10 → emission=10"));
+            EditorGUI.BeginDisabledGroup(audioLinkStrength.floatValue < 0.5f);
+            EditorGUILayout.HelpBox("AudioLink overrides your Emission Strength with these values based on the selected audio band's intensity.", MessageType.Info);
+            materialEditor.ShaderProperty(audioMultMin, new GUIContent("Min Strength", "Emission strength at low/silent audio. Example: Min=1 means emission strength of 1 when silent."));
+            materialEditor.ShaderProperty(audioMultMax, new GUIContent("Max Strength", "Emission strength at peak audio. Example: Max=10 means emission strength of 10 at full volume."));
+            EditorGUI.EndDisabledGroup();
+
+            DrawDivider();
+
+            EditorGUILayout.LabelField("Color Shifting", EditorStyles.boldLabel);
+            materialEditor.ShaderProperty(audioLinkColorShift, new GUIContent("Enable Color Shifting", "Toggle audio-reactive color gradient shifting on/off."));
+
+            EditorGUI.BeginDisabledGroup(audioLinkColorShift.floatValue < 0.5f);
+            EditorGUILayout.HelpBox("Audio band intensity blends between three colors to create a smooth gradient effect.", MessageType.Info);
+            materialEditor.ShaderProperty(audioLinkColorLow, new GUIContent("Silent Color", "Color displayed when audio is silent or at minimum intensity."));
+            materialEditor.ShaderProperty(audioLinkColorMid, new GUIContent("Mid Color", "Color displayed at medium audio intensity (50%)."));
+            materialEditor.ShaderProperty(audioLinkColorHigh, new GUIContent("Peak Color", "Color displayed at peak audio intensity (100%)."));
+            EditorGUI.EndDisabledGroup();
 
             EditorGUILayout.Space();
-            EditorGUILayout.HelpBox("💡 Example: Base Emission Strength=1, Min=1, Max=10 → Audio reactive emission ranges from 1 to 10 based on audio intensity. Requires Emission to be enabled!", MessageType.None);
+            EditorGUILayout.HelpBox("💡 AudioLink features require Emission to be enabled! Enable AudioLink, choose which features to use (strength and/or color), and configure the audio band.", MessageType.None);
         });
+
+        if (EditorGUI.EndChangeCheck())
+        {
+            Material mat = materialEditor.target as Material;
+            if (useAudioLink.floatValue > 0.5f)
+                mat.EnableKeyword("AUDIOLINK");
+            else
+                mat.DisableKeyword("AUDIOLINK");
+        }
 
         settingsFoldout = DrawFoldoutSection("Settings", settingsFoldout, () => {
             MaterialProperty invFade = FindProperty("_InvFade", properties);
@@ -215,6 +246,12 @@ public class ParticlesShaderGUI : ShaderGUI
         }
 
         SetupMaterialBlendMode(material, (RenderingMode)renderingMode.floatValue, (ColorMode)colorMode.floatValue);
+
+        // Ensure AudioLink keyword is properly set on material load
+        if (useAudioLink.floatValue > 0.5f)
+            material.EnableKeyword("AUDIOLINK");
+        else
+            material.DisableKeyword("AUDIOLINK");
     }
 
     void SetupMaterialBlendMode(Material material, RenderingMode renderingMode, ColorMode colorMode)
