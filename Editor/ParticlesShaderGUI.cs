@@ -3,9 +3,9 @@ using UnityEditor;
 using System.IO;
 
 [System.Serializable]
-public class ShaderVersionData
+public class PackageData
 {
-    public string shader_version;
+    public string version;
 }
 
 public class ParticlesShaderGUI : ShaderGUI
@@ -51,14 +51,14 @@ public class ParticlesShaderGUI : ShaderGUI
         if (shaderVersion != null)
             return shaderVersion;
 
-        string versionPath = "Assets/_Jax Shaders/version.json";
-        if (File.Exists(versionPath))
+        string packagePath = "Packages/com.kebolder.shaders/package.json";
+        if (File.Exists(packagePath))
         {
             try
             {
-                string json = File.ReadAllText(versionPath);
-                ShaderVersionData data = JsonUtility.FromJson<ShaderVersionData>(json);
-                shaderVersion = data.shader_version ?? "1.0.0";
+                string json = File.ReadAllText(packagePath);
+                PackageData data = JsonUtility.FromJson<PackageData>(json);
+                shaderVersion = data.version ?? "1.0.0";
             }
             catch
             {
