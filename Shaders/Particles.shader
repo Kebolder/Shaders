@@ -12,7 +12,7 @@ Shader "_Kebolder/Particles"
         [KHeader(Main Maps)] _MainTex ("Particle Texture", 2D) = "white" {}
         [HideInInspector][KDivider] _KDividerMain1 ("", Float) = 0
 
-        [KHeader(Colors)] _TintColor ("Tint Color", Color) = (1,1,1,1)
+        [KHeader(Colors)] _TintColor ("Color", Color) = (1,1,1,1)
         _Alpha ("Alpha", Range(0,1)) = 1.0
         [Enum(Texture Alpha,0,Luminance (Black Transparent),1,Luminance Inverted (White Transparent),2)] _AlphaMode ("Alpha Source", Int) = 0
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.5
@@ -346,7 +346,7 @@ Shader "_Kebolder/Particles"
                 {
                     alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
                 }
-                col.a = alphaSample * i.color.a * _Alpha;
+                col.a = alphaSample * i.color.a * _TintColor.a * _Alpha;
 
                 // Edge Fade
                 if (_UseEdgeFade > 0.5)
@@ -677,7 +677,7 @@ Shader "_Kebolder/Particles"
                 {
                     alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
                 }
-                col.a = alphaSample * i.color.a * _Alpha;
+                col.a = alphaSample * i.color.a * _TintColor.a * _Alpha;
 
                 if (_UseEdgeFade > 0.5)
                 {
