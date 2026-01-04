@@ -14,6 +14,7 @@ Shader "_Kebolder/Particles"
 
         [KHeader(Colors)] _TintColor ("Tint Color", Color) = (1,1,1,1)
         _Alpha ("Alpha", Range(0,1)) = 1.0
+        [Enum(Texture Alpha,0,Luminance (Black Transparent),1,Luminance Inverted (White Transparent),2)] _AlphaMode ("Alpha Source", Int) = 0
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.5
         [HideInInspector][KSectionEnd] _KSectionMainEnd ("", Float) = 0
 
@@ -145,6 +146,7 @@ Shader "_Kebolder/Particles"
             float _InvFade;
             float _Cutoff;
             float _Alpha;
+            int _AlphaMode;
 
             float _UseDissolve;
             UNITY_DECLARE_TEX2D(_DissolveTexture);
@@ -283,7 +285,8 @@ Shader "_Kebolder/Particles"
                     mainUV += distortionOffset;
                 }
 
-                half4 col = tex2D(_MainTex, mainUV) * i.color;
+                half4 baseSample = tex2D(_MainTex, mainUV);
+                half4 col = baseSample * i.color;
 
                 // Emission
                 half3 emission = half3(0,0,0);
@@ -334,7 +337,16 @@ Shader "_Kebolder/Particles"
                 {
                     col.rgb += emission;
                 }
-                col.a *= _Alpha;
+                half alphaSample = baseSample.a;
+                if (_AlphaMode == 1)
+                {
+                    alphaSample = dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
+                }
+                else if (_AlphaMode == 2)
+                {
+                    alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
+                }
+                col.a = alphaSample * i.color.a * _Alpha;
 
                 // Edge Fade
                 if (_UseEdgeFade > 0.5)
@@ -365,7 +377,10 @@ Shader "_Kebolder/Particles"
                     }
                 }
 
-                clip(col.a - _Cutoff);
+                if (_RenderingMode == 1)
+                {
+                    clip(col.a - _Cutoff);
+                }
 
                 #ifdef SOFTPARTICLES_ON
                 float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));
@@ -443,6 +458,7 @@ Shader "_Kebolder/Particles"
             float _InvFade;
             float _Cutoff;
             float _Alpha;
+            int _AlphaMode;
 
             float _UseDissolve;
             UNITY_DECLARE_TEX2D(_DissolveTexture);
@@ -598,7 +614,8 @@ Shader "_Kebolder/Particles"
                     mainUV += distortionOffset;
                 }
 
-                half4 col = tex2D(_MainTex, mainUV) * i.color;
+                half4 baseSample = tex2D(_MainTex, mainUV);
+                half4 col = baseSample * i.color;
 
                 half3 emission = half3(0,0,0);
                 if (_UseEmission > 0.5)
@@ -651,7 +668,16 @@ Shader "_Kebolder/Particles"
                 {
                     col.rgb += emission;
                 }
-                col.a *= _Alpha;
+                half alphaSample = baseSample.a;
+                if (_AlphaMode == 1)
+                {
+                    alphaSample = dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
+                }
+                else if (_AlphaMode == 2)
+                {
+                    alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
+                }
+                col.a = alphaSample * i.color.a * _Alpha;
 
                 if (_UseEdgeFade > 0.5)
                 {
@@ -681,7 +707,10 @@ Shader "_Kebolder/Particles"
                     }
                 }
 
-                clip(col.a - _Cutoff);
+                if (_RenderingMode == 1)
+                {
+                    clip(col.a - _Cutoff);
+                }
 
                 #ifdef SOFTPARTICLES_ON
                 float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));

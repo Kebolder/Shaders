@@ -193,6 +193,10 @@ public class KebolderShaderGUI : ShaderGUI
 
         while (sectionStack.Count > 0)
             EndSection(sectionStack);
+
+        EditorGUILayout.Space(6);
+        DrawDivider();
+        materialEditor.RenderQueueField();
     }
 
     private void DrawHeader(string title)
