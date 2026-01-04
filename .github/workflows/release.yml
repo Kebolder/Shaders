@@ -95,6 +95,6 @@ jobs:
         if: ${{ env.triggerRepoUpdate == 'true' }}
         uses: peter-evans/repository-dispatch@v2
         with:
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ secrets.VPM_TOKEN }}
           repository: Kebolder/Kebolder-VPM-Listing
           event-type: trigger-repo-update
