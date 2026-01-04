@@ -256,7 +256,7 @@ Shader "_Kebolder/Particles"
 
                 o.vertex = UnityObjectToClipPos(vertex);
                 o.texcoord = v.texcoord;
-                o.color = v.color * _TintColor;
+                o.color = fixed4(v.color.rgb * _TintColor.rgb, v.color.a);
                 o.screenPos = ComputeScreenPos(o.vertex);
 
                 UNITY_TRANSFER_FOG(o,o.vertex);
@@ -582,7 +582,7 @@ Shader "_Kebolder/Particles"
 
                 o.vertex = UnityObjectToClipPos(vertex);
                 o.texcoord = v.texcoord;
-                o.color = v.color * _TintColor;
+                o.color = fixed4(v.color.rgb * _TintColor.rgb, v.color.a);
                 o.screenPos = ComputeScreenPos(o.vertex);
 
                 UNITY_TRANSFER_FOG(o,o.vertex);
