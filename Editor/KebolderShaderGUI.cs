@@ -196,6 +196,8 @@ public class KebolderShaderGUI : ShaderGUI
 
         EditorGUILayout.Space(6);
         DrawDivider();
+
+        ApplyRenderingMode(material);
         materialEditor.RenderQueueField();
     }
 
@@ -225,6 +227,86 @@ public class KebolderShaderGUI : ShaderGUI
         Rect lineRect = new Rect(rect.x, rect.y + rect.height - 2, rect.width, 1);
         EditorGUI.DrawRect(lineRect, EditorGUIUtility.isProSkin ? new Color(0.5f, 0.5f, 0.5f) : new Color(0.3f, 0.3f, 0.3f));
         EditorGUILayout.Space(2);
+    }
+
+    private static void ApplyRenderingMode(Material material)
+    {
+        if (material == null || !material.HasProperty("_RenderingMode"))
+            return;
+
+        int mode = material.GetInt("_RenderingMode");
+        int srcBlend;
+        int dstBlend;
+        int zWrite;
+        int blendOp;
+        string renderType;
+        int renderQueue;
+
+        switch (mode)
+        {
+            case 0: // Opaque
+                srcBlend = (int)BlendMode.One;
+                dstBlend = (int)BlendMode.Zero;
+                blendOp = (int)BlendOp.Add;
+                zWrite = 1;
+                renderType = "Opaque";
+                renderQueue = (int)RenderQueue.Geometry;
+                break;
+            case 1: // Cutout
+                srcBlend = (int)BlendMode.One;
+                dstBlend = (int)BlendMode.Zero;
+                blendOp = (int)BlendOp.Add;
+                zWrite = 1;
+                renderType = "TransparentCutout";
+                renderQueue = (int)RenderQueue.AlphaTest;
+                break;
+            case 3: // Additive
+                srcBlend = (int)BlendMode.SrcAlpha;
+                dstBlend = (int)BlendMode.One;
+                blendOp = (int)BlendOp.Add;
+                zWrite = 0;
+                renderType = "Transparent";
+                renderQueue = (int)RenderQueue.Transparent;
+                break;
+            case 5: // Subtract
+                srcBlend = (int)BlendMode.SrcAlpha;
+                dstBlend = (int)BlendMode.One;
+                blendOp = (int)BlendOp.ReverseSubtract;
+                zWrite = 0;
+                renderType = "Transparent";
+                renderQueue = (int)RenderQueue.Transparent;
+                break;
+            case 2: // Fade
+            case 4: // Transparent
+            default:
+                if (mode == 4)
+                {
+                    srcBlend = (int)BlendMode.One;
+                    dstBlend = (int)BlendMode.OneMinusSrcAlpha;
+                }
+                else
+                {
+                    srcBlend = (int)BlendMode.SrcAlpha;
+                    dstBlend = (int)BlendMode.OneMinusSrcAlpha;
+                }
+                blendOp = (int)BlendOp.Add;
+                zWrite = 0;
+                renderType = "Transparent";
+                renderQueue = (int)RenderQueue.Transparent;
+                break;
+        }
+
+        if (material.HasProperty("_SrcBlend"))
+            material.SetInt("_SrcBlend", srcBlend);
+        if (material.HasProperty("_DstBlend"))
+            material.SetInt("_DstBlend", dstBlend);
+        if (material.HasProperty("_ZWrite"))
+            material.SetInt("_ZWrite", zWrite);
+        if (material.HasProperty("_BlendOp"))
+            material.SetInt("_BlendOp", blendOp);
+
+        material.SetOverrideTag("RenderType", renderType);
+        material.renderQueue = renderQueue;
     }
 
     private void DrawSectionHeader(string title)

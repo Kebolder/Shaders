@@ -14,7 +14,6 @@ Shader "_Kebolder/Particles"
 
         [KHeader(Colors)] _TintColor ("Color", Color) = (1,1,1,1)
         _Alpha ("Alpha", Range(0,1)) = 1.0
-        [Enum(Texture Alpha,0,Luminance (Black Transparent),1,Luminance Inverted (White Transparent),2)] _AlphaMode ("Alpha Source", Int) = 0
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.5
         [HideInInspector][KSectionEnd] _KSectionMainEnd ("", Float) = 0
 
@@ -77,6 +76,7 @@ Shader "_Kebolder/Particles"
 
         [HideInInspector] _SrcBlend ("Source Blend", Int) = 5
         [HideInInspector] _DstBlend ("Destination Blend", Int) = 10
+        [HideInInspector] _BlendOp ("Blend Op", Int) = 0
         [HideInInspector] _ZWrite ("Z Write", Int) = 0
     }
 
@@ -89,6 +89,7 @@ Shader "_Kebolder/Particles"
         Pass
         {
             Tags { "LightMode"="ForwardBase" }
+            BlendOp [_BlendOp]
             Blend [_SrcBlend] [_DstBlend]
             ZWrite [_ZWrite]
             Cull Back
@@ -146,7 +147,6 @@ Shader "_Kebolder/Particles"
             float _InvFade;
             float _Cutoff;
             float _Alpha;
-            int _AlphaMode;
 
             float _UseDissolve;
             UNITY_DECLARE_TEX2D(_DissolveTexture);
@@ -185,6 +185,58 @@ Shader "_Kebolder/Particles"
 
             int _RenderingMode;
             int _ColorMode;
+
+            half3 RGBtoHSV(half3 arg1)
+            {
+                half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
+                half4 P = lerp(half4(arg1.bg, K.wz), half4(arg1.gb, K.xy), step(arg1.b, arg1.g));
+                half4 Q = lerp(half4(P.xyw, arg1.r), half4(arg1.r, P.yzx), step(P.x, arg1.r));
+                half D = Q.x - min(Q.w, Q.y);
+                half E = 1e-10h;
+                return half3(abs(Q.z + (Q.w - Q.y) / (6.0h * D + E)), D / (Q.x + E), Q.x);
+            }
+
+            half3 HSVtoRGB(half3 arg1)
+            {
+                half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
+                half3 P = abs(frac(arg1.xxx + K.xyz) * 6.0h - K.www);
+                return arg1.z * lerp(K.xxx, saturate(P - K.xxx), arg1.y);
+            }
+
+            half4 ApplyColorMode(half4 albedo, half4 color)
+            {
+                if (_ColorMode == 2)
+                {
+                    albedo.rgb = lerp(1.0h - 2.0h * (1.0h - albedo.rgb) * (1.0h - color.rgb),
+                                      2.0h * albedo.rgb * color.rgb,
+                                      step(albedo.rgb, 0.5h));
+                }
+                else if (_ColorMode == 5)
+                {
+                    half3 aHSV = RGBtoHSV(albedo.rgb);
+                    half3 bHSV = RGBtoHSV(color.rgb);
+                    albedo.rgb = HSVtoRGB(half3(bHSV.x, bHSV.y, aHSV.z));
+                }
+                else if (_ColorMode == 3 || _ColorMode == 4 || _ColorMode == 6)
+                {
+                    half add = (_ColorMode == 4) ? 1.0h : -1.0h;
+                    half diff = (_ColorMode == 6) ? 1.0h : 0.0h;
+                    albedo.rgb = albedo.rgb + color.rgb * add;
+                    albedo.rgb = lerp(albedo.rgb, abs(albedo.rgb), diff);
+                }
+                else
+                {
+                    albedo.rgb *= color.rgb;
+                }
+
+                return albedo;
+            }
+
+            half ComputeAlpha(half4 baseSample, half vertexAlpha)
+            {
+                half alpha = baseSample.a * vertexAlpha * _TintColor.a * _Alpha;
+                return saturate(alpha);
+            }
 
             #if defined(AUDIOLINK)
             float GetAudioReactiveValue(int band)
@@ -286,7 +338,7 @@ Shader "_Kebolder/Particles"
                 }
 
                 half4 baseSample = tex2D(_MainTex, mainUV);
-                half4 col = baseSample * i.color;
+                half4 col = ApplyColorMode(baseSample, i.color);
 
                 // Emission
                 half3 emission = half3(0,0,0);
@@ -337,19 +389,10 @@ Shader "_Kebolder/Particles"
                 {
                     col.rgb += emission;
                 }
-                half alphaSample = baseSample.a;
-                if (_AlphaMode == 1)
-                {
-                    alphaSample = dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
-                }
-                else if (_AlphaMode == 2)
-                {
-                    alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
-                }
-                col.a = alphaSample * i.color.a * _TintColor.a * _Alpha;
+                col.a = ComputeAlpha(baseSample, i.color.a);
 
                 // Edge Fade
-                if (_UseEdgeFade > 0.5)
+                if (_UseEdgeFade > 0.5 && _RenderingMode >= 2)
                 {
                     float2 screenUV = i.screenPos.xy / i.screenPos.w;
                     float2 edgeDist = min(screenUV, 1.0 - screenUV);
@@ -383,11 +426,19 @@ Shader "_Kebolder/Particles"
                 }
 
                 #ifdef SOFTPARTICLES_ON
-                float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));
-                float partZ = i.projPos.z;
-                float fade = saturate(_InvFade * (sceneZ - partZ));
-                col.a *= fade;
+                if (_RenderingMode >= 2)
+                {
+                    float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));
+                    float partZ = i.projPos.z;
+                    float fade = saturate(_InvFade * (sceneZ - partZ));
+                    col.a *= fade;
+                }
                 #endif
+
+                if (_RenderingMode <= 1)
+                {
+                    col.a = 1.0;
+                }
 
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
@@ -399,6 +450,7 @@ Shader "_Kebolder/Particles"
         Pass
         {
             Tags { "LightMode"="ForwardBase" }
+            BlendOp [_BlendOp]
             Blend [_SrcBlend] [_DstBlend]
             ZWrite [_ZWrite]
             Cull Front
@@ -458,7 +510,6 @@ Shader "_Kebolder/Particles"
             float _InvFade;
             float _Cutoff;
             float _Alpha;
-            int _AlphaMode;
 
             float _UseDissolve;
             UNITY_DECLARE_TEX2D(_DissolveTexture);
@@ -497,6 +548,58 @@ Shader "_Kebolder/Particles"
 
             int _RenderingMode;
             int _ColorMode;
+
+            half3 RGBtoHSV(half3 arg1)
+            {
+                half4 K = half4(0.0h, -1.0h / 3.0h, 2.0h / 3.0h, -1.0h);
+                half4 P = lerp(half4(arg1.bg, K.wz), half4(arg1.gb, K.xy), step(arg1.b, arg1.g));
+                half4 Q = lerp(half4(P.xyw, arg1.r), half4(arg1.r, P.yzx), step(P.x, arg1.r));
+                half D = Q.x - min(Q.w, Q.y);
+                half E = 1e-10h;
+                return half3(abs(Q.z + (Q.w - Q.y) / (6.0h * D + E)), D / (Q.x + E), Q.x);
+            }
+
+            half3 HSVtoRGB(half3 arg1)
+            {
+                half4 K = half4(1.0h, 2.0h / 3.0h, 1.0h / 3.0h, 3.0h);
+                half3 P = abs(frac(arg1.xxx + K.xyz) * 6.0h - K.www);
+                return arg1.z * lerp(K.xxx, saturate(P - K.xxx), arg1.y);
+            }
+
+            half4 ApplyColorMode(half4 albedo, half4 color)
+            {
+                if (_ColorMode == 2)
+                {
+                    albedo.rgb = lerp(1.0h - 2.0h * (1.0h - albedo.rgb) * (1.0h - color.rgb),
+                                      2.0h * albedo.rgb * color.rgb,
+                                      step(albedo.rgb, 0.5h));
+                }
+                else if (_ColorMode == 5)
+                {
+                    half3 aHSV = RGBtoHSV(albedo.rgb);
+                    half3 bHSV = RGBtoHSV(color.rgb);
+                    albedo.rgb = HSVtoRGB(half3(bHSV.x, bHSV.y, aHSV.z));
+                }
+                else if (_ColorMode == 3 || _ColorMode == 4 || _ColorMode == 6)
+                {
+                    half add = (_ColorMode == 4) ? 1.0h : -1.0h;
+                    half diff = (_ColorMode == 6) ? 1.0h : 0.0h;
+                    albedo.rgb = albedo.rgb + color.rgb * add;
+                    albedo.rgb = lerp(albedo.rgb, abs(albedo.rgb), diff);
+                }
+                else
+                {
+                    albedo.rgb *= color.rgb;
+                }
+
+                return albedo;
+            }
+
+            half ComputeAlpha(half4 baseSample, half vertexAlpha)
+            {
+                half alpha = baseSample.a * vertexAlpha * _TintColor.a * _Alpha;
+                return saturate(alpha);
+            }
 
             #if defined(AUDIOLINK)
             float GetAudioReactiveValue(int band)
@@ -615,7 +718,7 @@ Shader "_Kebolder/Particles"
                 }
 
                 half4 baseSample = tex2D(_MainTex, mainUV);
-                half4 col = baseSample * i.color;
+                half4 col = ApplyColorMode(baseSample, i.color);
 
                 half3 emission = half3(0,0,0);
                 if (_UseEmission > 0.5)
@@ -668,18 +771,9 @@ Shader "_Kebolder/Particles"
                 {
                     col.rgb += emission;
                 }
-                half alphaSample = baseSample.a;
-                if (_AlphaMode == 1)
-                {
-                    alphaSample = dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
-                }
-                else if (_AlphaMode == 2)
-                {
-                    alphaSample = 1.0 - dot(baseSample.rgb, half3(0.2126, 0.7152, 0.0722));
-                }
-                col.a = alphaSample * i.color.a * _TintColor.a * _Alpha;
+                col.a = ComputeAlpha(baseSample, i.color.a);
 
-                if (_UseEdgeFade > 0.5)
+                if (_UseEdgeFade > 0.5 && _RenderingMode >= 2)
                 {
                     float2 screenUV = i.screenPos.xy / i.screenPos.w;
                     float2 edgeDist = min(screenUV, 1.0 - screenUV);
@@ -713,11 +807,19 @@ Shader "_Kebolder/Particles"
                 }
 
                 #ifdef SOFTPARTICLES_ON
-                float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));
-                float partZ = i.projPos.z;
-                float fade = saturate(_InvFade * (sceneZ - partZ));
-                col.a *= fade;
+                if (_RenderingMode >= 2)
+                {
+                    float sceneZ = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.projPos)));
+                    float partZ = i.projPos.z;
+                    float fade = saturate(_InvFade * (sceneZ - partZ));
+                    col.a *= fade;
+                }
                 #endif
+
+                if (_RenderingMode <= 1)
+                {
+                    col.a = 1.0;
+                }
 
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
